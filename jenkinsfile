@@ -1,0 +1,100 @@
+pipeline {
+    agent any
+
+    environment {
+        // AWS credentials stored in Jenkins (use "AWS_ACCESS_KEY_ID" and "AWS_SECRET_ACCESS_KEY")
+        AWS_DEFAULT_REGION = 'us-west-1'
+        LAMBDA_S3_BUCKET   = '' // This will be set by Terraform output
+        LAMBDA_S3_KEY      = 'lambda/latest.zip'
+        TERRAFORM_DIR      = 'terraform'
+        LAMBDA_DIR         = 'lambda/nodejs'
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/your-github-username/your-repo.git'
+            }
+        }
+
+        stage('Install Node Modules') {
+            steps {
+                dir("${LAMBDA_DIR}") {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Zip Lambda') {
+            steps {
+                dir("${LAMBDA_DIR}") {
+                    sh 'zip -r ../../lambda.zip .'
+                }
+            }
+        }
+
+        stage('Upload Lambda to S3') {
+            steps {
+                script {
+                    // Get S3 bucket from Terraform output if not hardcoded
+                    if (env.LAMBDA_S3_BUCKET == '') {
+                        env.LAMBDA_S3_BUCKET = sh(
+                            script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
+                            returnStdout: true
+                        ).trim()
+                    }
+                    sh "aws s3 cp lambda.zip s3://${env.LAMBDA_S3_BUCKET}/${env.LAMBDA_S3_KEY}"
+                }
+            }
+        }
+
+        stage('Terraform Init & Apply') {
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    sh 'terraform init'
+                    sh 'terraform apply -auto-approve'
+                }
+            }
+        }
+
+        stage('Test API') {
+            steps {
+                script {
+                    def apiUrl = sh(
+                        script: "terraform -chdir=${TERRAFORM_DIR} output -raw api_url",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Testing API with GET request..."
+                    sh "curl -X GET '${apiUrl}?id=test123' || echo 'Item may not exist yet'"
+
+                    echo "Testing API with POST request..."
+                    sh """
+                    curl -X POST '${apiUrl}' -H 'Content-Type: application/json' -d '{"id":"test123","info":"Hello from Jenkins"}'
+                    """
+
+                    echo "Testing API with PUT request..."
+                    sh """
+                    curl -X PUT '${apiUrl}' -H 'Content-Type: application/json' -d '{"id":"test123","info":"Updated info"}'
+                    """
+
+                    echo "Testing API with DELETE request..."
+                    sh """
+                    curl -X DELETE '${apiUrl}' -H 'Content-Type: application/json' -d '{"id":"test123"}'
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployment Successful! Lambda and API are live."
+        }
+        failure {
+            echo "Deployment Failed! Check Jenkins console for errors."
+        }
+    }
+}
