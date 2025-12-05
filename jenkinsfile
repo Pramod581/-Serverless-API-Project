@@ -2,9 +2,8 @@ pipeline {
     agent any
 
     environment {
-        // AWS credentials stored in Jenkins (use "AWS_ACCESS_KEY_ID" and "AWS_SECRET_ACCESS_KEY")
         AWS_DEFAULT_REGION = 'us-west-1'
-        LAMBDA_S3_BUCKET   = '' // This will be set by Terraform output
+        LAMBDA_S3_BUCKET   = ''     // Terraform output will fill this
         LAMBDA_S3_KEY      = 'lambda/latest.zip'
         TERRAFORM_DIR      = 'terraform'
         LAMBDA_DIR         = 'lambda/nodejs'
@@ -15,7 +14,7 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/your-github-username/your-repo.git'
+                    url: 'https://github.com/Pramod581/-Serverless-API-Project.git'
             }
         }
 
@@ -35,26 +34,47 @@ pipeline {
             }
         }
 
-        stage('Upload Lambda to S3') {
+        stage('Terraform Init') {
             steps {
-                script {
-                    // Get S3 bucket from Terraform output if not hardcoded
-                    if (env.LAMBDA_S3_BUCKET == '') {
-                        env.LAMBDA_S3_BUCKET = sh(
-                            script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
-                            returnStdout: true
-                        ).trim()
-                    }
-                    sh "aws s3 cp lambda.zip s3://${env.LAMBDA_S3_BUCKET}/${env.LAMBDA_S3_KEY}"
+                dir("${TERRAFORM_DIR}") {
+                    sh 'terraform init'
                 }
             }
         }
 
-        stage('Terraform Init & Apply') {
+        stage('Upload Lambda to S3') {
             steps {
-                dir("${TERRAFORM_DIR}") {
-                    sh 'terraform init'
-                    sh 'terraform apply -auto-approve'
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    script {
+
+                        // Get S3 bucket from terraform output
+                        if (env.LAMBDA_S3_BUCKET == '') {
+                            env.LAMBDA_S3_BUCKET = sh(
+                                script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
+                                returnStdout: true
+                            ).trim()
+                        }
+
+                        sh "aws s3 cp lambda.zip s3://${env.LAMBDA_S3_BUCKET}/${env.LAMBDA_S3_KEY}"
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    dir("${TERRAFORM_DIR}") {
+                        sh 'terraform apply -auto-approve'
+                    }
                 }
             }
         }
@@ -67,23 +87,17 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    echo "Testing API with GET request..."
-                    sh "curl -X GET '${apiUrl}?id=test123' || echo 'Item may not exist yet'"
+                    echo "GET request..."
+                    sh "curl -X GET '${apiUrl}?id=test123' || true"
 
-                    echo "Testing API with POST request..."
-                    sh """
-                    curl -X POST '${apiUrl}' -H 'Content-Type: application/json' -d '{"id":"test123","info":"Hello from Jenkins"}'
-                    """
+                    echo "POST request..."
+                    sh "curl -X POST '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Hello\"}'"
 
-                    echo "Testing API with PUT request..."
-                    sh """
-                    curl -X PUT '${apiUrl}' -H 'Content-Type: application/json' -d '{"id":"test123","info":"Updated info"}'
-                    """
+                    echo "PUT request..."
+                    sh "curl -X PUT '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Updated\"}'"
 
-                    echo "Testing API with DELETE request..."
-                    sh """
-                    curl -X DELETE '${apiUrl}' -H 'Content-Type: application/json' -d '{"id":"test123"}'
-                    """
+                    echo "DELETE request..."
+                    sh "curl -X DELETE '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\"}'"
                 }
             }
         }
@@ -91,10 +105,10 @@ pipeline {
 
     post {
         success {
-            echo "Deployment Successful! Lambda and API are live."
+            echo "Deployment Successful! Lambda + API Gateway are Live."
         }
         failure {
-            echo "Deployment Failed! Check Jenkins console for errors."
+            echo "Deployment Failed! Check Pipeline Logs."
         }
     }
 }
