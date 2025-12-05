@@ -3,10 +3,9 @@ pipeline {
 
     environment {
         AWS_DEFAULT_REGION = 'us-west-1'
-        LAMBDA_S3_BUCKET   = ''
-        LAMBDA_S3_KEY      = 'lambda/latest.zip'
         TERRAFORM_DIR      = 'terraform'
         LAMBDA_DIR         = 'lambda/nodejs'
+        LAMBDA_S3_KEY      = 'lambda/latest.zip'
     }
 
     stages {
@@ -14,7 +13,8 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/Pramod581/-Serverless-API-Project.git'
+                    url: 'https://github.com/Pramod581/-Serverless-API-Project.git',
+                    credentialsId: 'aws-creds'  // your Jenkins AWS credentials
             }
         }
 
@@ -22,6 +22,21 @@ pipeline {
             steps {
                 dir("${LAMBDA_DIR}") {
                     sh 'npm install'
+                }
+            }
+        }
+
+        stage('Terraform Init & Apply (Create S3)') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    dir("${TERRAFORM_DIR}") {
+                        sh 'terraform init -upgrade'
+                        sh 'terraform apply -auto-approve'
+                    }
                 }
             }
         }
@@ -34,14 +49,6 @@ pipeline {
             }
         }
 
-        stage('Terraform Init') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    sh 'terraform init -upgrade'
-                }
-            }
-        }
-
         stage('Upload Lambda to S3') {
             steps {
                 withCredentials([usernamePassword(
@@ -50,20 +57,19 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     script {
-                        if (env.LAMBDA_S3_BUCKET == '') {
-                            env.LAMBDA_S3_BUCKET = sh(
-                                script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
-                                returnStdout: true
-                            ).trim()
-                        }
+                        // Get bucket name from Terraform output
+                        def bucket = sh(
+                            script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
+                            returnStdout: true
+                        ).trim()
 
-                        sh "aws s3 cp lambda.zip s3://${env.LAMBDA_S3_BUCKET}/${env.LAMBDA_S3_KEY}"
+                        sh "aws s3 cp lambda.zip s3://${bucket}/${LAMBDA_S3_KEY}"
                     }
                 }
             }
         }
 
-        stage('Terraform Apply') {
+        stage('Terraform Apply (Update Lambda)') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'aws-creds',
@@ -85,15 +91,30 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
+                    echo "GET request..."
                     sh "curl -X GET '${apiUrl}?id=test123' || true"
+
+                    echo "POST request..."
+                    sh "curl -X POST '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Hello\"}'"
+
+                    echo "PUT request..."
+                    sh "curl -X PUT '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Updated\"}'"
+
+                    echo "DELETE request..."
+                    sh "curl -X DELETE '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\"}'"
                 }
             }
         }
     }
 
     post {
-        success { echo "Deployment Successful!" }
-        failure { echo "Deployment Failed!" }
+        success {
+            echo "Deployment Successful! Lambda + API Gateway are Live."
+        }
+        failure {
+            echo "Deployment Failed! Check Pipeline Logs."
+        }
     }
 }
+
 
