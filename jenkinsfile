@@ -37,7 +37,7 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh 'terraform init'
+                    sh 'terraform init -upgrade'
                 }
             }
         }
