@@ -1,9 +1,14 @@
 pipeline {
     agent any
 
+    tools {
+        // Name of the NodeJS installation configured in Jenkins Global Tool Configuration
+        nodejs 'NodeJS'
+    }
+
     environment {
         AWS_DEFAULT_REGION = 'us-west-1'
-        LAMBDA_S3_BUCKET   = ''     // Terraform output will fill this
+        LAMBDA_S3_BUCKET   = ''     
         LAMBDA_S3_KEY      = 'lambda/latest.zip'
         TERRAFORM_DIR      = 'terraform'
         LAMBDA_DIR         = 'lambda/nodejs'
@@ -50,15 +55,12 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     script {
-
-                        // Get S3 bucket from terraform output
                         if (env.LAMBDA_S3_BUCKET == '') {
                             env.LAMBDA_S3_BUCKET = sh(
                                 script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
                                 returnStdout: true
                             ).trim()
                         }
-
                         sh "aws s3 cp lambda.zip s3://${env.LAMBDA_S3_BUCKET}/${env.LAMBDA_S3_KEY}"
                     }
                 }
