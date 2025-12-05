@@ -2,22 +2,13 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 6.25"   # match latest locked provider
+      version = "~> 6.25"
     }
   }
 }
 
-
 provider "aws" {
   region = var.region
-}
-
-# ---------------------------------------------
-# S3 Bucket for Lambda artifacts (auto-created)
-# ---------------------------------------------
-resource "aws_s3_bucket" "lambda_artifacts" {
-  bucket_prefix = "lambda-artifacts-project4-"
-  acl           = "private"
 }
 
 # ---------------------------------------------
@@ -79,11 +70,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "logs:PutLogEvents"
         ],
         Resource = "arn:aws:logs:*:*:*"
-      },
-      {
-        Effect = "Allow",
-        Action = [ "s3:GetObject" ],
-        Resource = "${aws_s3_bucket.lambda_artifacts.arn}/*"
       }
     ]
   })
@@ -97,8 +83,8 @@ resource "aws_lambda_function" "api" {
   runtime       = var.lambda_runtime
   handler       = var.lambda_handler
 
-  s3_bucket = aws_s3_bucket.lambda_artifacts.id
-  s3_key    = var.lambda_s3_key
+  filename         = "${path.module}/../lambda/nodejs/lambda.zip" # local zip path
+  source_code_hash = filebase64sha256("${path.module}/../lambda/nodejs/lambda.zip")
 
   role = aws_iam_role.lambda_role.arn
 
@@ -152,7 +138,7 @@ resource "aws_api_gateway_deployment" "deployment" {
   rest_api_id = aws_api_gateway_rest_api.api.id
 
   triggers = {
-    redeploy = sha1(jsonencode(aws_lambda_function.api.environment))
+    redeploy = sha1(file("${path.module}/../lambda/nodejs/lambda.zip"))
   }
 
   depends_on = [aws_api_gateway_integration.lambda_integration]

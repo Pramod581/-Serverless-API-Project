@@ -5,16 +5,13 @@ pipeline {
         AWS_DEFAULT_REGION = 'us-west-1'
         TERRAFORM_DIR      = 'terraform'
         LAMBDA_DIR         = 'lambda/nodejs'
-        LAMBDA_S3_KEY      = 'lambda/latest.zip'
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/Pramod581/-Serverless-API-Project.git',
-                    credentialsId: 'aws-creds'  // your Jenkins AWS credentials
+                    url: 'https://github.com/Pramod581/-Serverless-API-Project.git'
             }
         }
 
@@ -22,21 +19,6 @@ pipeline {
             steps {
                 dir("${LAMBDA_DIR}") {
                     sh 'npm install'
-                }
-            }
-        }
-
-        stage('Terraform Init & Apply (Create S3)') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    dir("${TERRAFORM_DIR}") {
-                        sh 'terraform init -upgrade'
-                        sh 'terraform apply -auto-approve'
-                    }
                 }
             }
         }
@@ -49,27 +31,7 @@ pipeline {
             }
         }
 
-        stage('Upload Lambda to S3') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    script {
-                        // Get bucket name from Terraform output
-                        def bucket = sh(
-                            script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
-                            returnStdout: true
-                        ).trim()
-
-                        sh "aws s3 cp lambda.zip s3://${bucket}/${LAMBDA_S3_KEY}"
-                    }
-                }
-            }
-        }
-
-        stage('Terraform Apply (Update Lambda)') {
+        stage('Terraform Init & Apply') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'aws-creds',
@@ -77,6 +39,7 @@ pipeline {
                     passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                 )]) {
                     dir("${TERRAFORM_DIR}") {
+                        sh 'terraform init'
                         sh 'terraform apply -auto-approve'
                     }
                 }
@@ -116,5 +79,6 @@ pipeline {
         }
     }
 }
+
 
 
