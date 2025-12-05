@@ -1,14 +1,9 @@
 pipeline {
     agent any
 
-    tools {
-        // Name of the NodeJS installation configured in Jenkins Global Tool Configuration
-        nodejs 'NodeJS'
-    }
-
     environment {
         AWS_DEFAULT_REGION = 'us-west-1'
-        LAMBDA_S3_BUCKET   = ''     
+        LAMBDA_S3_BUCKET   = ''
         LAMBDA_S3_KEY      = 'lambda/latest.zip'
         TERRAFORM_DIR      = 'terraform'
         LAMBDA_DIR         = 'lambda/nodejs'
@@ -61,6 +56,7 @@ pipeline {
                                 returnStdout: true
                             ).trim()
                         }
+
                         sh "aws s3 cp lambda.zip s3://${env.LAMBDA_S3_BUCKET}/${env.LAMBDA_S3_KEY}"
                     }
                 }
@@ -89,28 +85,15 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    echo "GET request..."
                     sh "curl -X GET '${apiUrl}?id=test123' || true"
-
-                    echo "POST request..."
-                    sh "curl -X POST '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Hello\"}'"
-
-                    echo "PUT request..."
-                    sh "curl -X PUT '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Updated\"}'"
-
-                    echo "DELETE request..."
-                    sh "curl -X DELETE '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\"}'"
                 }
             }
         }
     }
 
     post {
-        success {
-            echo "Deployment Successful! Lambda + API Gateway are Live."
-        }
-        failure {
-            echo "Deployment Failed! Check Pipeline Logs."
-        }
+        success { echo "Deployment Successful!" }
+        failure { echo "Deployment Failed!" }
     }
 }
+
