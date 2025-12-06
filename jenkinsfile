@@ -8,6 +8,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
@@ -31,7 +32,7 @@ pipeline {
             }
         }
 
-        stage('Terraform Init & Apply') {
+        stage('Terraform Init') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'aws-creds',
@@ -40,6 +41,42 @@ pipeline {
                 )]) {
                     dir("${TERRAFORM_DIR}") {
                         sh 'terraform init'
+                    }
+                }
+            }
+        }
+
+        stage('Upload Lambda ZIP to S3') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'aws-creds',
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )]) {
+
+                        // Read Terraform output for S3 bucket
+                        def bucket = sh(
+                            script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Uploading lambda.zip to S3 bucket: ${bucket}"
+
+                        sh "aws s3 cp lambda.zip s3://${bucket}/lambda.zip"
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    dir("${TERRAFORM_DIR}") {
                         sh 'terraform apply -auto-approve'
                     }
                 }

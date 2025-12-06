@@ -51,8 +51,8 @@ resource "aws_iam_role_policy" "lambda_policy" {
     Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow",
-        Action = [
+        Effect   = "Allow",
+        Action   = [
           "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:DeleteItem",
@@ -63,8 +63,8 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Resource = aws_dynamodb_table.table.arn
       },
       {
-        Effect = "Allow",
-        Action = [
+        Effect   = "Allow",
+        Action   = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
@@ -83,7 +83,7 @@ resource "aws_lambda_function" "api" {
   runtime       = var.lambda_runtime
   handler       = var.lambda_handler
 
-  filename         = "${path.module}/../lambda/nodejs/lambda.zip" # local zip path
+  filename         = "${path.module}/../lambda/nodejs/lambda.zip"
   source_code_hash = filebase64sha256("${path.module}/../lambda/nodejs/lambda.zip")
 
   role = aws_iam_role.lambda_role.arn
@@ -151,10 +151,25 @@ resource "aws_api_gateway_stage" "stage" {
 }
 
 # ---------------------------------------------
-# CloudWatch Log Group
+# CloudWatch Log Group for Lambda
 # ---------------------------------------------
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/${aws_lambda_function.api.function_name}"
   retention_in_days = 14
+}
+
+# ---------------------------------------------
+# S3 Bucket for Lambda Artifacts
+# ---------------------------------------------
+resource "aws_s3_bucket" "lambda_artifacts" {
+  bucket        = "${var.table_name}-lambda-artifacts"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_versioning" "versioning" {
+  bucket = aws_s3_bucket.lambda_artifacts.id
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
