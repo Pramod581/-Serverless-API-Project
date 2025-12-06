@@ -27,7 +27,8 @@ pipeline {
         stage('Zip Lambda') {
             steps {
                 dir("${LAMBDA_DIR}") {
-                    sh 'zip -r ../../lambda.zip .'
+                    // Create lambda.zip inside lambda/nodejs so Terraform can find it
+                    sh 'zip -r lambda.zip .'
                 }
             }
         }
@@ -64,7 +65,7 @@ pipeline {
 
                         echo "Uploading lambda.zip to S3 bucket: ${bucket}"
 
-                        sh "aws s3 cp lambda.zip s3://${bucket}/lambda.zip"
+                        sh "aws s3 cp ${LAMBDA_DIR}/lambda.zip s3://${bucket}/lambda.zip"
                     }
                 }
             }
