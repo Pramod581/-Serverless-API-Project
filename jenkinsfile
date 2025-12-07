@@ -2,12 +2,10 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = "us-west-1" // Correct region
-        S3_BUCKET = "your-lambda-bucket-name" // Replace with your actual S3 bucket
+        AWS_DEFAULT_REGION = "us-west-1"
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
@@ -16,14 +14,11 @@ pipeline {
             }
         }
 
-        stage('Terraform Init & Apply (Create S3 Bucket)') {
+        stage('Terraform Init & Apply (Create S3)') {
             steps {
                 dir('terraform') {
-                    // Quote paths to avoid issues with spaces
-                    sh '''
-                    terraform init
-                    terraform apply -auto-approve
-                    '''
+                    sh 'terraform init'
+                    sh 'terraform apply -auto-approve'
                 }
             }
         }
@@ -39,19 +34,18 @@ pipeline {
 
         stage('Upload Lambda ZIP to S3') {
             steps {
-                withAWS(credentials: 'aws-creds', region: "${AWS_DEFAULT_REGION}") {
-                    sh 'aws s3 cp ../lambda.zip s3://${S3_BUCKET}/lambda.zip --acl private'
+                // Get the bucket name from Terraform output
+                script {
+                    def bucket = sh(script: "terraform -chdir=terraform output -raw lambda_s3_bucket", returnStdout: true).trim()
+                    sh "aws s3 cp ../lambda.zip s3://${bucket}/lambda.zip --acl private"
                 }
             }
         }
 
-        stage('Terraform Plan & Apply (Deploy Lambda)') {
+        stage('Terraform Apply Lambda') {
             steps {
                 dir('terraform') {
-                    sh '''
-                    terraform plan -out=tfplan
-                    terraform apply -auto-approve tfplan
-                    '''
+                    sh 'terraform apply -auto-approve'
                 }
             }
         }
@@ -66,6 +60,7 @@ pipeline {
         }
     }
 }
+
 
 
 
