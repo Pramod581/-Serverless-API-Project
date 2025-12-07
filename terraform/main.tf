@@ -27,13 +27,13 @@ resource "aws_iam_role" "lambda_role" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
+    Statement = [ {
       Action = "sts:AssumeRole"
       Effect = "Allow"
       Principal = {
         Service = "lambda.amazonaws.com"
       }
-    }]
+    } ]
   })
 }
 
@@ -62,7 +62,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
 # S3 BUCKET FOR LAMBDA ZIP
 ########################################
 resource "aws_s3_bucket" "lambda_artifacts" {
-  bucket        = var.s3_bucket_name
+  bucket        = "${var.lambda_function_name}-artifacts"
   force_destroy = true
 }
 
@@ -78,13 +78,12 @@ resource "aws_s3_bucket_versioning" "versioning" {
 ########################################
 resource "aws_lambda_function" "crud_lambda" {
   function_name = var.lambda_function_name
-  s3_bucket     = var.s3_bucket_name
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.id
   s3_key        = "lambda.zip"
   handler       = "index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
 
-  # FIXED: ZIP path (works even if workspace has spaces)
   source_code_hash = filebase64sha256(abspath("${path.module}/../lambda.zip"))
 
   environment {
@@ -115,9 +114,6 @@ resource "aws_apigatewayv2_route" "default_route" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
-########################################
-# API GATEWAY STAGE  (fixed)
-########################################
 resource "aws_apigatewayv2_stage" "prod" {
   api_id      = aws_apigatewayv2_api.http_api.id
   name        = "prod"
@@ -133,6 +129,13 @@ resource "aws_lambda_permission" "allow_api" {
   function_name = aws_lambda_function.crud_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*"
+}
+
+########################################
+# OUTPUT: Lambda S3 Bucket Name (for Jenkins)
+########################################
+output "lambda_bucket_name" {
+  value = aws_s3_bucket.lambda_artifacts.id
 }
 
 
