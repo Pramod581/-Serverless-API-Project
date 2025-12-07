@@ -67,11 +67,16 @@ resource "aws_s3_bucket_versioning" "versioning" {
 
 resource "aws_lambda_function" "crud_lambda" {
   function_name = var.lambda_function_name
-  s3_bucket     = var.s3_bucket_name
-  s3_key        = "lambda.zip"
-  handler       = "index.handler"
-  runtime       = "nodejs18.x"
-  role          = aws_iam_role.lambda_role.arn
+
+  s3_bucket = var.s3_bucket_name
+  s3_key    = "lambda.zip"
+
+  # Detect zip file changes (IMPORTANT)
+  source_code_hash = filebase64sha256("${path.module}/../lambda.zip")
+
+  handler = "index.handler"
+  runtime = "nodejs18.x"
+  role    = aws_iam_role.lambda_role.arn
 
   environment {
     variables = {
@@ -93,32 +98,7 @@ resource "aws_apigatewayv2_integration" "lambda_integration" {
   api_id                 = aws_apigatewayv2_api.http_api.id
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.crud_lambda.invoke_arn
-  payload_format_version = "2.0"
-}
-
-resource "aws_apigatewayv2_route" "default_route" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "ANY /{proxy+}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
-}
-
-resource "aws_apigatewayv2_stage" "prod" {
-  api_id      = aws_apigatewayv2_api.http_api.id
-  name        = "prod"
-  auto_deploy = true
-}
-
-########################################
-# PERMISSION FOR API GATEWAY TO INVOKE LAMBDA
-########################################
-
-resource "aws_lambda_permission" "api_permission" {
-  statement_id  = "AllowAPIGatewayInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.crud_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
-}
+  payl
 
 
 

@@ -2,102 +2,63 @@ pipeline {
     agent any
 
     environment {
-        // AWS credentials stored in Jenkins (Credentials ID)
-        AWS_CREDENTIALS = 'aws-cred'                  
-
-        // S3 bucket to store Lambda ZIP (must match Terraform var.s3_bucket_name)
-        S3_BUCKET       = 'serverless-api-artifacts-pramod'  
-
-        // Name of the zipped Lambda file
-        LAMBDA_ZIP      = 'lambda.zip'
+        AWS_DEFAULT_REGION = "us-west-1"
+        TF_DIR = "terraform"
+        LAMBDA_DIR = "lambda/nodejs"
     }
 
     stages {
 
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                // GitHub repository checkout using PAT
                 git branch: 'main',
                     url: 'https://github.com/Pramod581/-Serverless-API-Project.git',
-                    credentialsId: 'github-cred'  // Jenkins credential ID for GitHub PAT
+                    credentialsId: 'github-cred'
             }
         }
 
-        stage('Install Node Modules') {
+        stage('Install Node Packages for Lambda') {
             steps {
-                dir('lambda') {
-                    // Install Node.js dependencies for Lambda
+                dir(LAMBDA_DIR) {
                     sh 'npm install'
                 }
             }
         }
 
-        stage('Zip Lambda') {
+        stage('Zip Lambda Code') {
             steps {
-                dir('lambda') {
-                    // Zip the Lambda folder into lambda.zip
-                    sh 'zip -r ../lambda.zip .'
-                }
-            }
-        }
-
-        stage('Upload Lambda to S3') {
-            steps {
-                // Upload Lambda ZIP to S3 using Jenkins AWS credentials
-                withAWS(credentials: "${AWS_CREDENTIALS}") {
-                    sh 'aws s3 cp lambda.zip s3://$S3_BUCKET/'
+                dir(LAMBDA_DIR) {
+                    sh 'zip -r lambda.zip .'
                 }
             }
         }
 
         stage('Terraform Init') {
             steps {
-                dir('terraform') {
-                    // Initialize Terraform
+                dir(TF_DIR) {
                     sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                dir(TF_DIR) {
+                    sh 'terraform plan'
                 }
             }
         }
 
         stage('Terraform Apply') {
             steps {
-                dir('terraform') {
-                    // Apply Terraform changes automatically
+                dir(TF_DIR) {
                     sh 'terraform apply -auto-approve'
-                }
-            }
-        }
-
-        stage('Output API URL') {
-            steps {
-                dir('terraform') {
-                    script {
-                        // Fetch the API Gateway URL from Terraform outputs
-                        def api_url = sh(script: "terraform output -raw api_url", returnStdout: true).trim()
-                        echo "API URL: ${api_url}"
-                    }
-                }
-            }
-        }
-
-        stage('Test API') {
-            steps {
-                dir('terraform') {
-                    script {
-                        // Run basic CRUD tests using curl
-                        def api_url = sh(script: "terraform output -raw api_url", returnStdout: true).trim()
-                        sh """
-                        curl -X POST -H 'Content-Type: application/json' -d '{"id":"1","info":"Hello World"}' ${api_url}
-                        curl -X GET '${api_url}?id=1'
-                        curl -X PUT -H 'Content-Type: application/json' -d '{"id":"1","info":"Updated Info"}' ${api_url}
-                        curl -X DELETE '${api_url}?id=1'
-                        """
-                    }
                 }
             }
         }
     }
 }
+
 
 
 
