@@ -1,11 +1,12 @@
 {
-  "name": "lambda-crud",
+  "name": "serverless-api-lambda",
   "version": "1.0.0",
-  "description": "Simple CRUD AWS Lambda",
+  "description": "AWS Lambda function for Serverless API project",
   "main": "index.js",
-  "type": "module",
-  "dependencies": {
-    "aws-sdk": "^2.1481.0"
-  }
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "MIT"
 }
 

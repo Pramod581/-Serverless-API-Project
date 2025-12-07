@@ -2,8 +2,7 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = "us-west-1"          // Correct region
-        S3_BUCKET = "my-lambda-bucket"           // Replace with your actual bucket name
+        AWS_DEFAULT_REGION = "us-west-1"
     }
 
     stages {
@@ -16,12 +15,30 @@ pipeline {
             }
         }
 
+        stage('Terraform Init & Apply (Create S3 Bucket)') {
+            steps {
+                dir('terraform') {
+                    sh "terraform init"
+                    sh "terraform apply -auto-approve"
+                }
+
+                script {
+                    env.S3_BUCKET = sh(
+                        script: "cd terraform && terraform output -raw lambda_bucket_name",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "S3 bucket created by Terraform: ${env.S3_BUCKET}"
+                }
+            }
+        }
+
         stage('ZIP Lambda Code') {
             steps {
                 dir("lambda") {
                     sh "zip -r ../lambda.zip ."
                 }
-                sh "ls -l"
+                sh "ls -lh"
             }
         }
 
@@ -35,40 +52,25 @@ pipeline {
             }
         }
 
-        stage('Terraform Init') {
+        stage('Terraform Apply (Deploy Lambda)') {
             steps {
                 dir('terraform') {
-                    sh "terraform init"
-                }
-            }
-        }
-
-        stage('Terraform Plan') {
-            steps {
-                dir('terraform') {
-                    sh "terraform plan -out=tfplan"
-                }
-            }
-        }
-
-        stage('Terraform Apply') {
-            steps {
-                dir('terraform') {
-                    sh "terraform apply -auto-approve tfplan"
+                    sh "terraform apply -auto-approve"
                 }
             }
         }
     }
 
     post {
-        failure {
-            echo "Pipeline failed!"
-        }
         success {
             echo "Pipeline executed successfully!"
         }
+        failure {
+            echo "Pipeline failed!"
+        }
     }
 }
+
 
 
 
