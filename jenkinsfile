@@ -2,7 +2,8 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = "us-east-1"
+        AWS_DEFAULT_REGION = "us-west-1" // Correct region
+        S3_BUCKET = "your-lambda-bucket-name" // Replace with your actual S3 bucket
     }
 
     stages {
@@ -28,7 +29,6 @@ pipeline {
         stage('Upload Lambda ZIP to S3') {
             steps {
                 withAWS(credentials: 'aws-creds', region: "${AWS_DEFAULT_REGION}") {
-                    // Bucket name comes from terraform variable (in variables.tf)
                     sh """
                     aws s3 cp lambda.zip s3://${S3_BUCKET}/lambda.zip --acl private
                     """
