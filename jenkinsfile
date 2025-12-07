@@ -2,8 +2,13 @@ pipeline {
     agent any
 
     environment {
-        AWS_CREDENTIALS = 'aws-cred'            // Your Jenkins AWS Credentials ID
-        S3_BUCKET       = 'serverless-api-artifacts-pramod'  // Same as var.s3_bucket_name
+        // AWS credentials stored in Jenkins (Credentials ID)
+        AWS_CREDENTIALS = 'aws-cred'                  
+
+        // S3 bucket to store Lambda ZIP (must match Terraform var.s3_bucket_name)
+        S3_BUCKET       = 'serverless-api-artifacts-pramod'  
+
+        // Name of the zipped Lambda file
         LAMBDA_ZIP      = 'lambda.zip'
     }
 
@@ -11,13 +16,17 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'main', url: 'https://github.com/your-username/project-4-serverless-api.git'
+                // GitHub repository checkout using PAT
+                git branch: 'main',
+                    url: 'https://github.com/Pramod581/-Serverless-API-Project.git',
+                    credentialsId: 'github-cred'  // Jenkins credential ID for GitHub PAT
             }
         }
 
         stage('Install Node Modules') {
             steps {
                 dir('lambda') {
+                    // Install Node.js dependencies for Lambda
                     sh 'npm install'
                 }
             }
@@ -26,6 +35,7 @@ pipeline {
         stage('Zip Lambda') {
             steps {
                 dir('lambda') {
+                    // Zip the Lambda folder into lambda.zip
                     sh 'zip -r ../lambda.zip .'
                 }
             }
@@ -33,6 +43,7 @@ pipeline {
 
         stage('Upload Lambda to S3') {
             steps {
+                // Upload Lambda ZIP to S3 using Jenkins AWS credentials
                 withAWS(credentials: "${AWS_CREDENTIALS}") {
                     sh 'aws s3 cp lambda.zip s3://$S3_BUCKET/'
                 }
@@ -42,6 +53,7 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 dir('terraform') {
+                    // Initialize Terraform
                     sh 'terraform init'
                 }
             }
@@ -50,6 +62,7 @@ pipeline {
         stage('Terraform Apply') {
             steps {
                 dir('terraform') {
+                    // Apply Terraform changes automatically
                     sh 'terraform apply -auto-approve'
                 }
             }
@@ -59,6 +72,7 @@ pipeline {
             steps {
                 dir('terraform') {
                     script {
+                        // Fetch the API Gateway URL from Terraform outputs
                         def api_url = sh(script: "terraform output -raw api_url", returnStdout: true).trim()
                         echo "API URL: ${api_url}"
                     }
@@ -70,6 +84,7 @@ pipeline {
             steps {
                 dir('terraform') {
                     script {
+                        // Run basic CRUD tests using curl
                         def api_url = sh(script: "terraform output -raw api_url", returnStdout: true).trim()
                         sh """
                         curl -X POST -H 'Content-Type: application/json' -d '{"id":"1","info":"Hello World"}' ${api_url}
@@ -83,6 +98,7 @@ pipeline {
         }
     }
 }
+
 
 
 
