@@ -2,7 +2,8 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = "us-west-1"
+        AWS_DEFAULT_REGION = "us-west-1" // Correct region
+        S3_BUCKET = "your-lambda-bucket-name" // Replace with your actual S3 bucket
     }
 
     stages {
@@ -18,58 +19,54 @@ pipeline {
         stage('Terraform Init & Apply (Create S3 Bucket)') {
             steps {
                 dir('terraform') {
-                    sh "terraform init"
-                    sh "terraform apply -auto-approve"
-                }
-
-                script {
-                    env.S3_BUCKET = sh(
-                        script: "cd terraform && terraform output -raw lambda_bucket_name",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "S3 bucket created by Terraform: ${env.S3_BUCKET}"
+                    // Quote paths to avoid issues with spaces
+                    sh '''
+                    terraform init
+                    terraform apply -auto-approve
+                    '''
                 }
             }
         }
 
         stage('ZIP Lambda Code') {
             steps {
-                dir("lambda") {
-                    sh "zip -r ../lambda.zip ."
+                dir('lambda') {
+                    sh 'zip -r ../lambda.zip .'
                 }
-                sh "ls -lh"
+                sh 'ls -l ../lambda.zip'
             }
         }
 
         stage('Upload Lambda ZIP to S3') {
             steps {
                 withAWS(credentials: 'aws-creds', region: "${AWS_DEFAULT_REGION}") {
-                    sh """
-                    aws s3 cp lambda.zip s3://${S3_BUCKET}/lambda.zip --acl private
-                    """
+                    sh 'aws s3 cp ../lambda.zip s3://${S3_BUCKET}/lambda.zip --acl private'
                 }
             }
         }
 
-        stage('Terraform Apply (Deploy Lambda)') {
+        stage('Terraform Plan & Apply (Deploy Lambda)') {
             steps {
                 dir('terraform') {
-                    sh "terraform apply -auto-approve"
+                    sh '''
+                    terraform plan -out=tfplan
+                    terraform apply -auto-approve tfplan
+                    '''
                 }
             }
         }
     }
 
     post {
-        success {
-            echo "Pipeline executed successfully!"
-        }
         failure {
             echo "Pipeline failed!"
         }
+        success {
+            echo "Pipeline executed successfully!"
+        }
     }
 }
+
 
 
 
