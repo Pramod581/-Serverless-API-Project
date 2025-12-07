@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = "us-west-1" // Correct region
-        S3_BUCKET = "your-lambda-bucket-name" // Replace with your actual S3 bucket
+        AWS_DEFAULT_REGION = "us-west-1"          // Correct region
+        S3_BUCKET = "my-lambda-bucket"           // Replace with your actual bucket name
     }
 
     stages {
@@ -21,7 +21,6 @@ pipeline {
                 dir("lambda") {
                     sh "zip -r ../lambda.zip ."
                 }
-
                 sh "ls -l"
             }
         }
