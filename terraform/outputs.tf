@@ -1,5 +1,6 @@
 output "api_url" {
-  value = aws_apigatewayv2_stage.prod.invoke_url
+  description = "Invoke URL for API Gateway"
+  value       = aws_apigatewayv2_stage.default.invoke_url
 }
 
 output "lambda_name" {

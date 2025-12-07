@@ -2,14 +2,12 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = "us-west-1"
-        TF_DIR = "terraform"
-        LAMBDA_DIR = "lambda/nodejs"
+        AWS_DEFAULT_REGION = "us-east-1"
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/Pramod581/-Serverless-API-Project.git',
@@ -17,44 +15,58 @@ pipeline {
             }
         }
 
-        stage('Install Node Packages for Lambda') {
+        stage('ZIP Lambda Code') {
             steps {
-                dir(LAMBDA_DIR) {
-                    sh 'npm install'
+                dir("lambda") {
+                    sh "zip -r ../lambda.zip ."
                 }
+
+                sh "ls -l"
             }
         }
 
-        stage('Zip Lambda Code') {
+        stage('Upload Lambda ZIP to S3') {
             steps {
-                dir(LAMBDA_DIR) {
-                    sh 'zip -r lambda.zip .'
+                withAWS(credentials: 'aws-creds', region: "${AWS_DEFAULT_REGION}") {
+                    // Bucket name comes from terraform variable (in variables.tf)
+                    sh """
+                    aws s3 cp lambda.zip s3://${S3_BUCKET}/lambda.zip --acl private
+                    """
                 }
             }
         }
 
         stage('Terraform Init') {
             steps {
-                dir(TF_DIR) {
-                    sh 'terraform init'
+                dir('terraform') {
+                    sh "terraform init"
                 }
             }
         }
 
         stage('Terraform Plan') {
             steps {
-                dir(TF_DIR) {
-                    sh 'terraform plan'
+                dir('terraform') {
+                    sh "terraform plan -out=tfplan"
                 }
             }
         }
 
         stage('Terraform Apply') {
             steps {
-                dir(TF_DIR) {
-                    sh 'terraform apply -auto-approve'
+                dir('terraform') {
+                    sh "terraform apply -auto-approve tfplan"
                 }
             }
+        }
+    }
+
+    post {
+        failure {
+            echo "Pipeline failed!"
+        }
+        success {
+            echo "Pipeline executed successfully!"
         }
     }
 }
