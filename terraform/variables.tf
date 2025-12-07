@@ -1,30 +1,32 @@
-variable "region" {
+variable "aws_region" {
   description = "AWS region"
   type        = string
   default     = "us-west-1"
 }
 
-variable "lambda_s3_key" {
-  description = "S3 key for Lambda zip file"
-  type        = string
-  default     = "lambda/latest.zip"
-}
-
-variable "lambda_runtime" {
-  description = "Lambda runtime to use"
-  type        = string
-  default     = "nodejs18.x"
-}
-
-variable "lambda_handler" {
-  description = "Lambda handler function"
-  type        = string
-  default     = "index.handler"
-}
-
 variable "table_name" {
   description = "DynamoDB table name"
   type        = string
-  default     = "serverless-crud-table"
+  default     = "ServerlessItemsTable"
 }
+
+variable "lambda_function_name" {
+  description = "Lambda function name"
+  type        = string
+  default     = "serverless-crud-api"
+}
+
+variable "lambda_role_name" {
+  description = "IAM role for Lambda"
+  type        = string
+  default     = "lambda-crud-role"
+}
+
+variable "s3_bucket_name" {
+  description = "S3 bucket to store Lambda ZIP artifacts"
+  type        = string
+  default     = "serverless-api-artifacts-pramod"
+}
+
+
 

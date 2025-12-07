@@ -1,175 +1,124 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 6.25"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.region
-}
-
-# ---------------------------------------------
-# DynamoDB Table
-# ---------------------------------------------
-resource "aws_dynamodb_table" "table" {
-  name         = var.table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "id"
-
-  attribute {
-    name = "id"
-    type = "S"
-  }
-}
-
-# ---------------------------------------------
-# IAM Role for Lambda
-# ---------------------------------------------
-data "aws_iam_policy_document" "lambda_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-  }
-}
+########################################
+# IAM ROLE FOR LAMBDA
+########################################
 
 resource "aws_iam_role" "lambda_role" {
-  name               = "${var.table_name}-lambda-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name = var.lambda_role_name
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+    }]
+  })
 }
 
 resource "aws_iam_role_policy" "lambda_policy" {
-  name = "lambda_dynamodb_logs"
+  name = "${var.lambda_role_name}-policy"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
-    Version = "2012-10-17",
+    Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow",
-        Action   = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Scan",
-          "dynamodb:Query",
-          "dynamodb:UpdateItem"
-        ],
-        Resource = aws_dynamodb_table.table.arn
+        Effect = "Allow"
+        Action = [
+          "dynamodb:*"
+        ]
+        Resource = [
+          aws_dynamodb_table.items.arn
+        ]
       },
       {
-        Effect   = "Allow",
-        Action   = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ],
-        Resource = "arn:aws:logs:*:*:*"
+        Effect = "Allow"
+        Action = [
+          "logs:*"
+        ]
+        Resource = "*"
       }
     ]
   })
 }
 
-# ---------------------------------------------
-# Lambda Function
-# ---------------------------------------------
-resource "aws_lambda_function" "api" {
-  function_name = "serverless-crud-lambda"
-  runtime       = var.lambda_runtime
-  handler       = var.lambda_handler
+########################################
+# S3 BUCKET FOR LAMBDA ZIP
+########################################
 
-  filename         = "${path.module}/../lambda/nodejs/lambda.zip"
-  source_code_hash = filebase64sha256("${path.module}/../lambda/nodejs/lambda.zip")
-
-  role = aws_iam_role.lambda_role.arn
-
-  environment {
-    variables = {
-      TABLE_NAME = aws_dynamodb_table.table.name
-    }
-  }
-
-  depends_on = [aws_iam_role_policy.lambda_policy]
-}
-
-# ---------------------------------------------
-# API Gateway
-# ---------------------------------------------
-resource "aws_api_gateway_rest_api" "api" {
-  name = "serverless-crud-api"
-}
-
-resource "aws_api_gateway_resource" "proxy" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
-  path_part   = "{proxy+}"
-}
-
-resource "aws_api_gateway_method" "any_method" {
-  rest_api_id   = aws_api_gateway_rest_api.api.id
-  resource_id   = aws_api_gateway_resource.proxy.id
-  http_method   = "ANY"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "lambda_integration" {
-  rest_api_id             = aws_api_gateway_rest_api.api.id
-  resource_id             = aws_api_gateway_resource.proxy.id
-  http_method             = aws_api_gateway_method.any_method.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.api.invoke_arn
-}
-
-resource "aws_lambda_permission" "apigw" {
-  statement_id  = "AllowAPIGatewayInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.api.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
-}
-
-resource "aws_api_gateway_deployment" "deployment" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-
-  triggers = {
-    redeploy = sha1(file("${path.module}/../lambda/nodejs/lambda.zip"))
-  }
-
-  depends_on = [aws_api_gateway_integration.lambda_integration]
-}
-
-resource "aws_api_gateway_stage" "stage" {
-  stage_name    = "prod"
-  rest_api_id   = aws_api_gateway_rest_api.api.id
-  deployment_id = aws_api_gateway_deployment.deployment.id
-}
-
-# ---------------------------------------------
-# CloudWatch Log Group for Lambda
-# ---------------------------------------------
-resource "aws_cloudwatch_log_group" "lambda_logs" {
-  name              = "/aws/lambda/${aws_lambda_function.api.function_name}"
-  retention_in_days = 14
-}
-
-# ---------------------------------------------
-# S3 Bucket for Lambda Artifacts
-# ---------------------------------------------
 resource "aws_s3_bucket" "lambda_artifacts" {
-  bucket        = "${var.table_name}-lambda-artifacts"
+  bucket        = var.s3_bucket_name
   force_destroy = true
 }
 
 resource "aws_s3_bucket_versioning" "versioning" {
   bucket = aws_s3_bucket.lambda_artifacts.id
+
   versioning_configuration {
     status = "Enabled"
   }
 }
+
+########################################
+# LAMBDA FUNCTION (FROM S3 ZIP)
+########################################
+
+resource "aws_lambda_function" "crud_lambda" {
+  function_name = var.lambda_function_name
+  s3_bucket     = var.s3_bucket_name
+  s3_key        = "lambda.zip"
+  handler       = "index.handler"
+  runtime       = "nodejs18.x"
+  role          = aws_iam_role.lambda_role.arn
+
+  environment {
+    variables = {
+      TABLE_NAME = var.table_name
+    }
+  }
+}
+
+########################################
+# API GATEWAY (HTTP API)
+########################################
+
+resource "aws_apigatewayv2_api" "http_api" {
+  name          = "serverless-api"
+  protocol_type = "HTTP"
+}
+
+resource "aws_apigatewayv2_integration" "lambda_integration" {
+  api_id                 = aws_apigatewayv2_api.http_api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.crud_lambda.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "default_route" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "ANY /{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+}
+
+resource "aws_apigatewayv2_stage" "prod" {
+  api_id      = aws_apigatewayv2_api.http_api.id
+  name        = "prod"
+  auto_deploy = true
+}
+
+########################################
+# PERMISSION FOR API GATEWAY TO INVOKE LAMBDA
+########################################
+
+resource "aws_lambda_permission" "api_permission" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.crud_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
+
+
 

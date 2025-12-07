@@ -2,23 +2,22 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = 'us-west-1'
-        TERRAFORM_DIR      = 'terraform'
-        LAMBDA_DIR         = 'lambda/nodejs'
+        AWS_CREDENTIALS = 'aws-cred'            // Your Jenkins AWS Credentials ID
+        S3_BUCKET       = 'serverless-api-artifacts-pramod'  // Same as var.s3_bucket_name
+        LAMBDA_ZIP      = 'lambda.zip'
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/Pramod581/-Serverless-API-Project.git'
+                git branch: 'main', url: 'https://github.com/your-username/project-4-serverless-api.git'
             }
         }
 
         stage('Install Node Modules') {
             steps {
-                dir("${LAMBDA_DIR}") {
+                dir('lambda') {
                     sh 'npm install'
                 }
             }
@@ -26,46 +25,42 @@ pipeline {
 
         stage('Zip Lambda') {
             steps {
-                dir("${LAMBDA_DIR}") {
-                    // Create lambda.zip inside lambda/nodejs so Terraform can find it
-                    sh 'zip -r lambda.zip .'
+                dir('lambda') {
+                    sh 'zip -r ../lambda.zip .'
                 }
             }
         }
 
-        stage('Terraform Init & Apply') {
+        stage('Upload Lambda to S3') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'aws-creds',
-                    usernameVariable: 'AWS_ACCESS_KEY_ID',
-                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                )]) {
-                    dir("${TERRAFORM_DIR}") {
-                        sh 'terraform init'
-                        sh 'terraform apply -auto-approve'
-                    }
+                withAWS(credentials: "${AWS_CREDENTIALS}") {
+                    sh 'aws s3 cp lambda.zip s3://$S3_BUCKET/'
                 }
             }
         }
 
-        stage('Upload Lambda ZIP to S3 (After Apply)') {
+        stage('Terraform Init') {
             steps {
-                script {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'aws-creds',
-                        usernameVariable: 'AWS_ACCESS_KEY_ID',
-                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                    )]) {
+                dir('terraform') {
+                    sh 'terraform init'
+                }
+            }
+        }
 
-                        // bucket created AFTER terraform apply
-                        def bucket = sh(
-                            script: "terraform -chdir=${TERRAFORM_DIR} output -raw s3_bucket",
-                            returnStdout: true
-                        ).trim()
+        stage('Terraform Apply') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform apply -auto-approve'
+                }
+            }
+        }
 
-                        echo "Uploading lambda.zip to S3 bucket: ${bucket}"
-
-                        sh "aws s3 cp ${LAMBDA_DIR}/lambda.zip s3://${bucket}/lambda.zip"
+        stage('Output API URL') {
+            steps {
+                dir('terraform') {
+                    script {
+                        def api_url = sh(script: "terraform output -raw api_url", returnStdout: true).trim()
+                        echo "API URL: ${api_url}"
                     }
                 }
             }
@@ -73,37 +68,23 @@ pipeline {
 
         stage('Test API') {
             steps {
-                script {
-                    def apiUrl = sh(
-                        script: "terraform -chdir=${TERRAFORM_DIR} output -raw api_url",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "GET request..."
-                    sh "curl -X GET '${apiUrl}?id=test123' || true"
-
-                    echo "POST request..."
-                    sh "curl -X POST '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Hello\"}'"
-
-                    echo "PUT request..."
-                    sh "curl -X PUT '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\",\"info\":\"Updated\"}'"
-
-                    echo "DELETE request..."
-                    sh "curl -X DELETE '${apiUrl}' -H 'Content-Type: application/json' -d '{\"id\":\"test123\"}'"
+                dir('terraform') {
+                    script {
+                        def api_url = sh(script: "terraform output -raw api_url", returnStdout: true).trim()
+                        sh """
+                        curl -X POST -H 'Content-Type: application/json' -d '{"id":"1","info":"Hello World"}' ${api_url}
+                        curl -X GET '${api_url}?id=1'
+                        curl -X PUT -H 'Content-Type: application/json' -d '{"id":"1","info":"Updated Info"}' ${api_url}
+                        curl -X DELETE '${api_url}?id=1'
+                        """
+                    }
                 }
             }
         }
     }
-
-    post {
-        success {
-            echo "Deployment Successful! Lambda + API Gateway are Live."
-        }
-        failure {
-            echo "Deployment Failed! Check Pipeline Logs."
-        }
-    }
 }
+
+
 
 
 
